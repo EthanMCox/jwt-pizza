@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
+          node-version: "22.x"
 
       - name: set version
         id: set_version
@@ -41,7 +41,7 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
           npm run test:coverage
-          
+
       - name: Update coverage
         run: |
           coverage=$(jq '.total.lines.pct' coverage/coverage-summary.json)

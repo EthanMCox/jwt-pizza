@@ -96,7 +96,7 @@ async function mockOrderVerificationApi(page: Page, jwt: string, verifyRes: { me
   });
 }
 
-async function mockFranchiseeStoreApi(page: Page, user: MockApiUser, franchise: any) {
+async function mockFranchiseeStoreApi(page: Page, user: MockApiUser, franchise: any, expectedStoreName: string) {
   let nextStoreId = 2;
 
   await page.route(`*/**/api/franchise/${user.id}`, async (route) => {
@@ -108,7 +108,7 @@ async function mockFranchiseeStoreApi(page: Page, user: MockApiUser, franchise: 
     const storeReq = route.request().postDataJSON();
     const storeRes = { id: nextStoreId++, name: storeReq.name, totalRevenue: 0 };
     expect(route.request().method()).toBe('POST');
-    expect(storeReq).toMatchObject({ name: expect.any(String) });
+    expect(storeReq).toMatchObject({ name: expectedStoreName });
     franchise.stores.push(storeRes);
     await route.fulfill({ json: storeRes });
   });
@@ -121,7 +121,7 @@ async function mockFranchiseeStoreApi(page: Page, user: MockApiUser, franchise: 
   });
 }
 
-async function mockAdminFranchiseApi(page: Page, franchises: any[], franchiseAdmin: MockApiUser) {
+async function mockAdminFranchiseApi(page: Page, franchises: any[], franchiseAdmin: MockApiUser, expectedFranchiseName: string) {
   let nextFranchiseId = Math.max(...franchises.map((franchise) => franchise.id)) + 1;
 
   await mockFranchiseListApi(page, (url) => {
@@ -136,7 +136,10 @@ async function mockAdminFranchiseApi(page: Page, franchises: any[], franchiseAdm
   await page.route('*/**/api/franchise', async (route) => {
     const franchiseReq = route.request().postDataJSON();
     expect(route.request().method()).toBe('POST');
-    expect(franchiseReq.admins[0].email).toBe(franchiseAdmin.email);
+    expect(franchiseReq).toMatchObject({
+      name: expectedFranchiseName,
+      admins: [{ email: franchiseAdmin.email }],
+    });
     const franchiseRes = {
       ...franchiseReq,
       id: nextFranchiseId++,
@@ -192,7 +195,17 @@ async function basicInit(page: Page) {
     more: false,
   }));
   await mockOrderApi(page, {
-    post: (orderReq) => ({ order: { ...orderReq, id: 23 }, jwt: 'eyJpYXQ' }),
+    post: (orderReq) => {
+      expect(orderReq).toMatchObject({
+        franchiseId: 2,
+        storeId: '4',
+        items: [
+          { menuId: 1, description: 'Veggie', price: 0.0038 },
+          { menuId: 2, description: 'Pepperoni', price: 0.0042 },
+        ],
+      });
+      return { order: { ...orderReq, id: 23 }, jwt: 'eyJpYXQ' };
+    },
   });
   await page.goto('/');
 }
@@ -201,9 +214,18 @@ test('login', async ({ page }) => {
   await basicInit(page);
   await page.getByRole('link', { name: 'Login' }).click();
   await page.getByRole('textbox', { name: 'Email address' }).fill('d@jwt.com');
+  await page.getByRole('textbox', { name: 'Password' }).fill('incorrect');
+  await page.getByRole('button', { name: 'Login' }).click();
+
+  await expect(page.locator('.h-4.text-yellow-200')).toContainText('401');
+  await expect(page.getByRole('link', { name: 'KC' })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+
   await page.getByRole('textbox', { name: 'Password' }).fill('a');
   await page.getByRole('button', { name: 'Login' }).click();
   await expect(page.getByRole('link', { name: 'KC' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Logout' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Login' })).toHaveCount(0);
 });
 
 test('purchase with login', async ({ page }) => {
@@ -225,7 +247,12 @@ test('purchase with login', async ({ page }) => {
   await expect(page.locator('tbody')).toContainText('Pepperoni');
   await expect(page.locator('tfoot')).toContainText('0.008 ₿');
   await page.getByRole('button', { name: 'Pay now' }).click();
-  await expect(page.getByText('0.008')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Here is your JWT Pizza!' })).toBeVisible();
+  const orderDetails = page.locator('main .grid-cols-5');
+  await expect(orderDetails).toContainText(/order ID:\s*23/);
+  await expect(orderDetails).toContainText(/pie count:\s*2/);
+  await expect(orderDetails).toContainText(/total:\s*0\.008/);
+  await expect(page.getByText('eyJpYXQ', { exact: true })).toBeVisible();
 });
 
 test('register, order, verify the JWT, and view order history', async ({ page }) => {
@@ -282,6 +309,8 @@ test('register, order, verify the JWT, and view order history', async ({ page })
   await page.getByRole('textbox', { name: 'Email address' }).fill(email);
   await page.getByRole('textbox', { name: 'Password' }).fill('somepassword');
   await page.getByRole('button', { name: 'Register' }).click();
+  await expect(page.getByRole('link', { name: 'PD', exact: true })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Logout' })).toBeVisible();
 
   await page.getByRole('link', { name: 'Order' }).click();
   await page.getByRole('combobox').selectOption({ index: 1 });
@@ -291,10 +320,20 @@ test('register, order, verify the JWT, and view order history', async ({ page })
   await page.getByRole('button', { name: 'Pay now' }).click();
   await page.getByRole('button', { name: 'Verify' }).click();
   await expect(page.locator('#hs-jwt-modal')).toHaveClass(/opened/);
+  await expect(page.getByRole('heading', { name: 'JWT Pizza - valid' })).toBeVisible();
+  await expect(page.locator('#hs-jwt-modal pre')).toContainText('verified JWT payload');
   await page.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.locator('#hs-jwt-modal-backdrop')).toBeHidden();
   await page.getByRole('link', { name: 'PD', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your pizza kitchen' })).toBeVisible();
+  await expect(page.getByText('Here is your history of all the good times.')).toBeVisible();
+  const historyRow = page.getByRole('row').filter({ hasText: '23' });
+  await expect(historyRow).toHaveCount(1);
+  await expect(historyRow).toContainText('0.008');
+  await expect(historyRow).toContainText('2026-09-23T12:00:00.000Z');
   await page.getByRole('link', { name: 'Logout' }).click();
+  await expect(page.getByRole('link', { name: 'PD', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Login' })).toBeVisible();
 });
 
 test('franchisee creates and closes one store', async ({ page }) => {
@@ -316,7 +355,7 @@ test('franchisee creates and closes one store', async ({ page }) => {
       'f@jwt.com': { user: franchisee, password: 'franchisee', token: 'franchisee-token' },
     },
   });
-  await mockFranchiseeStoreApi(page, franchisee, franchise);
+  await mockFranchiseeStoreApi(page, franchisee, franchise, storeName);
 
   await page.goto('/');
   await page.getByRole('link', { name: 'Login' }).click();
@@ -324,11 +363,20 @@ test('franchisee creates and closes one store', async ({ page }) => {
   await page.getByRole('textbox', { name: 'Password' }).fill('franchisee');
   await page.getByRole('button', { name: 'Login' }).click();
   await page.getByRole('navigation', { name: 'Global' }).getByRole('link', { name: 'Franchise' }).click();
+  await expect(page.getByRole('heading', { name: 'Test Franchise' })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: 'Lehi' })).toBeVisible();
   await page.getByRole('button', { name: 'Create store' }).click();
   await page.getByRole('textbox', { name: 'store name' }).fill(storeName);
   await page.getByRole('button', { name: 'Create' }).click();
-  await page.getByRole('row').filter({ hasText: storeName }).getByRole('button', { name: 'Close' }).click();
+  const newStoreRow = page.getByRole('row').filter({ hasText: storeName });
+  await expect(newStoreRow).toBeVisible();
+  await newStoreRow.getByRole('button', { name: 'Close' }).click();
+  await expect(page.getByRole('main')).toContainText('Are you sure you want to close');
+  await expect(page.getByRole('main')).toContainText('Test Franchise');
+  await expect(page.getByRole('main')).toContainText(storeName);
   await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByRole('row').filter({ hasText: storeName })).toHaveCount(0);
+  await expect(page.getByRole('row').filter({ hasText: 'Lehi' })).toBeVisible();
   await page.getByRole('link', { name: 'Logout' }).click();
 });
 
@@ -360,7 +408,7 @@ test('admin creates, filters, and closes one franchise', async ({ page }) => {
       'a@jwt.com': { user: admin, password: 'admin', token: 'admin-token' },
     },
   });
-  await mockAdminFranchiseApi(page, franchises, franchiseAdmin);
+  await mockAdminFranchiseApi(page, franchises, franchiseAdmin, franchiseName);
 
   await page.goto('/');
   await page.getByRole('link', { name: 'Login' }).click();
@@ -372,9 +420,17 @@ test('admin creates, filters, and closes one franchise', async ({ page }) => {
   await page.getByRole('textbox', { name: 'franchise name' }).fill(franchiseName);
   await page.getByRole('textbox', { name: 'franchisee admin email' }).fill('f@jwt.com');
   await page.getByRole('button', { name: 'Create' }).click();
+  await expect(page.getByRole('row').filter({ hasText: franchiseName })).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: franchiseName })).toContainText('Pizza Franchisee');
   await page.getByRole('textbox', { name: 'Filter franchises' }).fill(franchiseName);
   await page.getByRole('button', { name: 'Submit' }).click();
-  await page.getByRole('row').filter({ hasText: franchiseName }).getByRole('button', { name: 'Close' }).click();
+  const createdFranchiseRow = page.getByRole('row').filter({ hasText: franchiseName });
+  await expect(createdFranchiseRow).toBeVisible();
+  await expect(page.getByRole('row').filter({ hasText: 'Existing Franchise' })).toHaveCount(0);
+  await createdFranchiseRow.getByRole('button', { name: 'Close' }).click();
+  await expect(page.getByRole('main')).toContainText(`Are you sure you want to close the ${franchiseName} franchise?`);
   await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await expect(page.getByRole('row').filter({ hasText: franchiseName })).toHaveCount(0);
+  await expect(page.getByRole('row').filter({ hasText: 'Existing Franchise' })).toBeVisible();
   await page.getByRole('link', { name: 'Logout' }).click();
 });

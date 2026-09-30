@@ -1,5 +1,106 @@
 import { Page } from "@playwright/test";
 import { test, expect } from "playwright-test-coverage";
+import { Role, User } from "../src/service/pizzaService";
+
+type MockAccount = { user: User; password: string };
+
+// Stateful fake of the service's user, auth, order, and franchise endpoints so
+// updates persist across logout and login just like the real backend.
+async function mockUserApi(page: Page) {
+  const accounts: MockAccount[] = [
+    { user: { id: "1", name: "常用名字", email: "a@jwt.com", roles: [{ role: Role.Admin }] }, password: "admin" },
+  ];
+  const franchises: any[] = [];
+  let loggedIn: MockAccount | undefined;
+  let nextId = 2;
+
+  await page.route(/\/api\/auth$/, async (route) => {
+    const request = route.request();
+    const method = request.method();
+
+    if (method === "POST") {
+      const { name, email, password } = request.postDataJSON();
+      loggedIn = { user: { id: String(nextId++), name, email, roles: [{ role: Role.Diner }] }, password };
+      accounts.push(loggedIn);
+      await route.fulfill({ json: { user: loggedIn.user, token: `token${loggedIn.user.id}` } });
+      return;
+    }
+
+    if (method === "PUT") {
+      const { email, password } = request.postDataJSON();
+      const account = accounts.find((a) => a.user.email === email && a.password === password);
+      if (!account) {
+        await route.fulfill({ status: 404, json: { message: "unknown user" } });
+        return;
+      }
+      loggedIn = account;
+      await route.fulfill({ json: { user: account.user, token: `token${account.user.id}` } });
+      return;
+    }
+
+    expect(method).toBe("DELETE");
+    loggedIn = undefined;
+    await route.fulfill({ json: { message: "logout successful" } });
+  });
+
+  await page.route(/\/api\/user\/me$/, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await route.fulfill({ json: loggedIn?.user });
+  });
+
+  await page.route(/\/api\/user\/\d+$/, async (route) => {
+    const request = route.request();
+    expect(request.method()).toBe("PUT");
+    const userId = new URL(request.url()).pathname.split("/").pop();
+    expect(userId).toBe(loggedIn?.user.id);
+
+    const { name, email, password } = request.postDataJSON();
+    const account = loggedIn!;
+    if (name) account.user.name = name;
+    if (email) account.user.email = email;
+    if (password) account.password = password;
+    await route.fulfill({ json: { user: account.user, token: `token${account.user.id}` } });
+  });
+
+  await page.route(/\/api\/order$/, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    await route.fulfill({ json: { dinerId: loggedIn?.user.id, orders: [], page: 1 } });
+  });
+
+  await page.route(/\/api\/franchise(\?.*)?$/, async (route) => {
+    const request = route.request();
+
+    if (request.method() === "GET") {
+      const nameFilter = new URL(request.url()).searchParams.get("name") || "*";
+      const searchName = nameFilter.replace(/\*/g, "").toLowerCase();
+      await route.fulfill({
+        json: { franchises: franchises.filter((f) => f.name.toLowerCase().includes(searchName)), more: false },
+      });
+      return;
+    }
+
+    expect(request.method()).toBe("POST");
+    const franchiseReq = request.postDataJSON();
+    const franchise = { id: franchises.length + 1, name: franchiseReq.name, admins: [] as any[], stores: [] };
+    for (const admin of franchiseReq.admins) {
+      const account = accounts.find((a) => a.user.email === admin.email)!;
+      account.user.roles!.push({ role: Role.Franchisee, objectId: String(franchise.id) });
+      franchise.admins.push({ id: account.user.id, name: account.user.name, email: account.user.email });
+    }
+    franchises.push(franchise);
+    await route.fulfill({ json: franchise });
+  });
+
+  await page.route(/\/api\/franchise\/\d+$/, async (route) => {
+    expect(route.request().method()).toBe("GET");
+    const userId = new URL(route.request().url()).pathname.split("/").pop();
+    await route.fulfill({ json: franchises.filter((f) => f.admins.some((a: any) => a.id === userId)) });
+  });
+}
+
+test.beforeEach(async ({ page }) => {
+  await mockUserApi(page);
+});
 
 function randomEmail(prefix = "user") {
   return `${prefix}${Math.floor(Math.random() * 10000)}@jwt.com`;

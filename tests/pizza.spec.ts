@@ -75,6 +75,13 @@ async function mockFranchiseListApi(page: Page, responseForUrl: (url: URL) => un
   });
 }
 
+async function mockUserListApi(page: Page, users: MockApiUser[]) {
+  await page.route(/\/api\/user\?/, async (route) => {
+    expect(route.request().method()).toBe('GET');
+    await route.fulfill({ json: { users, more: false } });
+  });
+}
+
 async function mockOrderApi(page: Page, handlers: { get?: () => unknown; post: (orderReq: any) => unknown }) {
   await page.route('*/**/api/order', async (route) => {
     const request = route.request();
@@ -409,6 +416,7 @@ test('admin creates, filters, and closes one franchise', async ({ page }) => {
     },
   });
   await mockAdminFranchiseApi(page, franchises, franchiseAdmin, franchiseName);
+  await mockUserListApi(page, [admin, franchiseAdmin]);
 
   await page.goto('/');
   await page.getByRole('link', { name: 'Login' }).click();

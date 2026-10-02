@@ -1,4 +1,4 @@
-import { Page } from "@playwright/test";
+import { Locator, Page } from "@playwright/test";
 import { test, expect } from "playwright-test-coverage";
 import { Role, User } from "../src/service/pizzaService";
 
@@ -289,6 +289,34 @@ async function openAdminUsers(page: Page) {
   return page.getByRole("table").filter({ has: page.getByRole("columnheader", { name: "Email" }) });
 }
 
+// Checks the exact rows of the users table, in order, as [name, email, role] cells
+async function expectUserRows(usersTable: Locator, rows: string[][]) {
+  const bodyRows = usersTable.locator("tbody").getByRole("row");
+  await expect(bodyRows).toHaveCount(rows.length);
+  for (let i = 0; i < rows.length; i++) {
+    await expect(bodyRows.nth(i).getByRole("cell")).toHaveText(rows[i]);
+  }
+}
+
+async function filterUsers(usersTable: Locator, filter: string) {
+  await usersTable.getByRole("textbox", { name: "Filter users" }).fill(filter);
+  await usersTable.getByRole("button", { name: "Submit" }).click();
+}
+
+function addNumberedUsers(count: number) {
+  for (let i = 1; i <= count; i++) {
+    mockAccounts.push({ user: { id: String(i + 2), name: `user ${i}`, email: `user${i}@jwt.com`, roles: [{ role: Role.Diner }] }, password: "a" });
+  }
+}
+
+function numberedUserRows(from: number, to: number) {
+  const rows: string[][] = [];
+  for (let i = from; i <= to; i++) rows.push([`user ${i}`, `user${i}@jwt.com`, "diner"]);
+  return rows;
+}
+
+const adminRow = ["常用名字", "a@jwt.com", "admin"];
+
 test("listUsers shows each user's name, email, and role", async ({ page }) => {
   mockAccounts.push(
     { user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" },
@@ -299,21 +327,12 @@ test("listUsers shows each user's name, email, and role", async ({ page }) => {
   );
 
   const usersTable = await openAdminUsers(page);
-  for (const header of ["Name", "Email", "Role"]) {
-    await expect(usersTable.getByRole("columnheader", { name: header })).toBeVisible();
-  }
-
-  const adminRow = usersTable.getByRole("row").filter({ hasText: "a@jwt.com" });
-  await expect(adminRow).toContainText("常用名字");
-  await expect(adminRow).toContainText("admin");
-
-  const dinerRow = usersTable.getByRole("row").filter({ hasText: "d@jwt.com" });
-  await expect(dinerRow).toContainText("Kai Chen");
-  await expect(dinerRow).toContainText("diner");
-
-  const franchiseeRow = usersTable.getByRole("row").filter({ hasText: "f@jwt.com" });
-  await expect(franchiseeRow).toContainText("Pizza Franchisee");
-  await expect(franchiseeRow).toContainText(/franchisee/i);
+  await expect(usersTable.locator("thead").getByRole("columnheader")).toHaveText(["Name", "Email", "Role"]);
+  await expectUserRows(usersTable, [
+    adminRow,
+    ["Kai Chen", "d@jwt.com", "diner"],
+    ["Pizza Franchisee", "f@jwt.com", "diner, franchisee"],
+  ]);
 });
 
 test("listUsers filters by name", async ({ page }) => {
@@ -321,40 +340,66 @@ test("listUsers filters by name", async ({ page }) => {
     { user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" },
     { user: { id: "4", name: "Buddy", email: "b@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" }
   );
+  const allRows = [adminRow, ["Kai Chen", "d@jwt.com", "diner"], ["Buddy", "b@jwt.com", "diner"]];
 
   const usersTable = await openAdminUsers(page);
-  await expect(usersTable.getByRole("row").filter({ hasText: "@jwt.com" })).toHaveCount(3);
+  await expectUserRows(usersTable, allRows);
 
-  await usersTable.getByRole("textbox", { name: "Filter users" }).fill("kai");
-  await usersTable.getByRole("button", { name: "Submit" }).click();
+  // Matches anywhere in the name
+  await filterUsers(usersTable, "chen");
+  await expectUserRows(usersTable, [["Kai Chen", "d@jwt.com", "diner"]]);
 
-  await expect(usersTable.getByRole("row").filter({ hasText: "@jwt.com" })).toHaveCount(1);
-  await expect(usersTable).toContainText("Kai Chen");
-  await expect(usersTable).not.toContainText("Buddy");
+  await filterUsers(usersTable, "nobody");
+  await expectUserRows(usersTable, []);
+  await expect(usersTable.getByRole("button", { name: "«" })).toBeDisabled();
+  await expect(usersTable.getByRole("button", { name: "»" })).toBeDisabled();
+
+  // Clearing the filter shows everyone again
+  await filterUsers(usersTable, "");
+  await expectUserRows(usersTable, allRows);
 });
 
 test("listUsers pages through users", async ({ page }) => {
-  for (let i = 1; i <= 12; i++) {
-    mockAccounts.push({ user: { id: String(i + 2), name: `user ${i}`, email: `user${i}@jwt.com`, roles: [{ role: Role.Diner }] }, password: "a" });
-  }
+  addNumberedUsers(12);
 
   // 13 users including the admin, shown 10 at a time
   const usersTable = await openAdminUsers(page);
-  const userRows = usersTable.getByRole("row").filter({ hasText: "@jwt.com" });
   const previous = usersTable.getByRole("button", { name: "«" });
   const next = usersTable.getByRole("button", { name: "»" });
 
-  await expect(userRows).toHaveCount(10);
+  await expectUserRows(usersTable, [adminRow, ...numberedUserRows(1, 9)]);
   await expect(previous).toBeDisabled();
   await expect(next).toBeEnabled();
 
   await next.click();
-  await expect(userRows).toHaveCount(3);
-  await expect(usersTable).toContainText("user12@jwt.com");
+  await expectUserRows(usersTable, numberedUserRows(10, 12));
   await expect(previous).toBeEnabled();
   await expect(next).toBeDisabled();
 
   await previous.click();
-  await expect(userRows).toHaveCount(10);
-  await expect(usersTable).toContainText("a@jwt.com");
+  await expectUserRows(usersTable, [adminRow, ...numberedUserRows(1, 9)]);
+});
+
+test("listUsers keeps the filter while paging and resets to the first page", async ({ page }) => {
+  addNumberedUsers(12);
+  mockAccounts.push({ user: { id: "15", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
+
+  const usersTable = await openAdminUsers(page);
+  const previous = usersTable.getByRole("button", { name: "«" });
+  const next = usersTable.getByRole("button", { name: "»" });
+
+  // 12 matches, so the filtered list still has two pages and leaves out the admin and Kai
+  await filterUsers(usersTable, "user");
+  await expectUserRows(usersTable, numberedUserRows(1, 10));
+  await expect(next).toBeEnabled();
+
+  await next.click();
+  await expectUserRows(usersTable, numberedUserRows(11, 12));
+  await expect(next).toBeDisabled();
+
+  // A new filter from the second page starts back on the first page
+  await filterUsers(usersTable, "kai");
+  await expectUserRows(usersTable, [["Kai Chen", "d@jwt.com", "diner"]]);
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeDisabled();
 });

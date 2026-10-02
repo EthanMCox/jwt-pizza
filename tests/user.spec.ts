@@ -48,6 +48,24 @@ async function mockUserApi(page: Page) {
     await route.fulfill({ json: loggedIn?.user });
   });
 
+  await page.route(/\/api\/user(\?.*)?$/, async (route) => {
+    const request = route.request();
+    expect(request.method()).toBe("GET");
+    if (!loggedIn?.user.roles?.some((r) => r.role === Role.Admin)) {
+      await route.fulfill({ status: 403, json: { message: "unable to list users" } });
+      return;
+    }
+
+    const params = new URL(request.url()).searchParams;
+    const page = Number(params.get("page") || 0);
+    const limit = Number(params.get("limit") || 10);
+    const searchName = (params.get("name") || "*").replace(/\*/g, "").toLowerCase();
+    const matches = accounts.filter((a) => a.user.name!.toLowerCase().includes(searchName)).map((a) => a.user);
+    await route.fulfill({
+      json: { users: matches.slice(page * limit, (page + 1) * limit), more: matches.length > (page + 1) * limit },
+    });
+  });
+
   await page.route(/\/api\/user\/\d+$/, async (route) => {
     const request = route.request();
     expect(request.method()).toBe("PUT");
@@ -96,10 +114,14 @@ async function mockUserApi(page: Page) {
     const userId = new URL(route.request().url()).pathname.split("/").pop();
     await route.fulfill({ json: franchises.filter((f) => f.admins.some((a: any) => a.id === userId)) });
   });
+
+  return accounts;
 }
 
+let mockAccounts: MockAccount[];
+
 test.beforeEach(async ({ page }) => {
-  await mockUserApi(page);
+  mockAccounts = await mockUserApi(page);
 });
 
 function randomEmail(prefix = "user") {
@@ -257,4 +279,82 @@ test("updateUser as franchisee keeps franchisee role", async ({ page }) => {
   // Still has access to their franchise
   await page.getByRole("navigation", { name: "Global" }).getByRole("link", { name: "Franchise" }).click();
   await expect(page.getByRole("main")).toContainText(franchiseName);
+});
+
+async function openAdminUsers(page: Page) {
+  await page.goto("/");
+  await login(page, "a@jwt.com", "admin");
+  await page.getByRole("link", { name: "Admin" }).click();
+  await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
+  return page.getByRole("table").filter({ has: page.getByRole("columnheader", { name: "Email" }) });
+}
+
+test("listUsers shows each user's name, email, and role", async ({ page }) => {
+  mockAccounts.push(
+    { user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" },
+    {
+      user: { id: "4", name: "Pizza Franchisee", email: "f@jwt.com", roles: [{ role: Role.Diner }, { role: Role.Franchisee, objectId: "1" }] },
+      password: "franchisee",
+    }
+  );
+
+  const usersTable = await openAdminUsers(page);
+  for (const header of ["Name", "Email", "Role"]) {
+    await expect(usersTable.getByRole("columnheader", { name: header })).toBeVisible();
+  }
+
+  const adminRow = usersTable.getByRole("row").filter({ hasText: "a@jwt.com" });
+  await expect(adminRow).toContainText("常用名字");
+  await expect(adminRow).toContainText("admin");
+
+  const dinerRow = usersTable.getByRole("row").filter({ hasText: "d@jwt.com" });
+  await expect(dinerRow).toContainText("Kai Chen");
+  await expect(dinerRow).toContainText("diner");
+
+  const franchiseeRow = usersTable.getByRole("row").filter({ hasText: "f@jwt.com" });
+  await expect(franchiseeRow).toContainText("Pizza Franchisee");
+  await expect(franchiseeRow).toContainText(/franchisee/i);
+});
+
+test("listUsers filters by name", async ({ page }) => {
+  mockAccounts.push(
+    { user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" },
+    { user: { id: "4", name: "Buddy", email: "b@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" }
+  );
+
+  const usersTable = await openAdminUsers(page);
+  await expect(usersTable.getByRole("row").filter({ hasText: "@jwt.com" })).toHaveCount(3);
+
+  await usersTable.getByRole("textbox", { name: "Filter users" }).fill("kai");
+  await usersTable.getByRole("button", { name: "Submit" }).click();
+
+  await expect(usersTable.getByRole("row").filter({ hasText: "@jwt.com" })).toHaveCount(1);
+  await expect(usersTable).toContainText("Kai Chen");
+  await expect(usersTable).not.toContainText("Buddy");
+});
+
+test("listUsers pages through users", async ({ page }) => {
+  for (let i = 1; i <= 12; i++) {
+    mockAccounts.push({ user: { id: String(i + 2), name: `user ${i}`, email: `user${i}@jwt.com`, roles: [{ role: Role.Diner }] }, password: "a" });
+  }
+
+  // 13 users including the admin, shown 10 at a time
+  const usersTable = await openAdminUsers(page);
+  const userRows = usersTable.getByRole("row").filter({ hasText: "@jwt.com" });
+  const previous = usersTable.getByRole("button", { name: "«" });
+  const next = usersTable.getByRole("button", { name: "»" });
+
+  await expect(userRows).toHaveCount(10);
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeEnabled();
+
+  await next.click();
+  await expect(userRows).toHaveCount(3);
+  await expect(usersTable).toContainText("user12@jwt.com");
+  await expect(previous).toBeEnabled();
+  await expect(next).toBeDisabled();
+
+  await previous.click();
+  await expect(userRows).toHaveCount(10);
+  await expect(usersTable).toContainText("a@jwt.com");
 });

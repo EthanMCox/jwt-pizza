@@ -423,7 +423,8 @@ test('admin creates, filters, and closes one franchise', async ({ page }) => {
   await expect(page.getByRole('row').filter({ hasText: franchiseName })).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: franchiseName })).toContainText('Pizza Franchisee');
   await page.getByRole('textbox', { name: 'Filter franchises' }).fill(franchiseName);
-  await page.getByRole('button', { name: 'Submit' }).click();
+  const franchiseTable = page.getByRole('table').filter({ has: page.getByRole('columnheader', { name: 'Franchise', exact: true }) });
+  await franchiseTable.getByRole('button', { name: 'Submit' }).click();
   const createdFranchiseRow = page.getByRole('row').filter({ hasText: franchiseName });
   await expect(createdFranchiseRow).toBeVisible();
   await expect(page.getByRole('row').filter({ hasText: 'Existing Franchise' })).toHaveCount(0);

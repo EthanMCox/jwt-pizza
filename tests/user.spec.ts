@@ -258,7 +258,8 @@ test("updateUser as franchisee keeps franchisee role", async ({ page }) => {
   await page.getByRole("button", { name: "Create" }).click();
   // The franchise list is paged, so filter to find the new one
   await page.getByRole("textbox", { name: "Filter franchises" }).fill(franchiseName);
-  await page.getByRole("button", { name: "Submit" }).click();
+  const franchiseTable = page.getByRole("table").filter({ has: page.getByRole("columnheader", { name: "Franchise", exact: true }) });
+  await franchiseTable.getByRole("button", { name: "Submit" }).click();
   await expect(page.getByRole("row").filter({ hasText: franchiseName })).toBeVisible();
   await logout(page);
 

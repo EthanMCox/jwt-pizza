@@ -28,7 +28,7 @@ export default function DinerDashboard(props: Props) {
     })();
   }, [user]);
 
-  function formatRole(role: { role: Role; objectId?: string }) {
+  function formatRole(role: { role: Role; objectId?: number }) {
     if (role.role === Role.Franchisee) {
       return `Franchisee on ${role.objectId}`;
     }

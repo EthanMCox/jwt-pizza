@@ -8,7 +8,7 @@ type MockAccount = { user: User; password: string };
 // updates persist across logout and login just like the real backend.
 async function mockUserApi(page: Page) {
   const accounts: MockAccount[] = [
-    { user: { id: "1", name: "常用名字", email: "a@jwt.com", roles: [{ role: Role.Admin }] }, password: "admin" },
+    { user: { id: 1, name: "常用名字", email: "a@jwt.com", roles: [{ role: Role.Admin }] }, password: "admin" },
   ];
   const franchises: any[] = [];
   let loggedIn: MockAccount | undefined;
@@ -20,7 +20,7 @@ async function mockUserApi(page: Page) {
 
     if (method === "POST") {
       const { name, email, password } = request.postDataJSON();
-      loggedIn = { user: { id: String(nextId++), name, email, roles: [{ role: Role.Diner }] }, password };
+      loggedIn = { user: { id: nextId++, name, email, roles: [{ role: Role.Diner }] }, password };
       accounts.push(loggedIn);
       await route.fulfill({ json: { user: loggedIn.user, token: `token${loggedIn.user.id}` } });
       return;
@@ -68,7 +68,7 @@ async function mockUserApi(page: Page) {
 
   await page.route(/\/api\/user\/\d+$/, async (route) => {
     const request = route.request();
-    const userId = new URL(request.url()).pathname.split("/").pop();
+    const userId = Number(new URL(request.url()).pathname.split("/").pop());
 
     if (request.method() === "DELETE") {
       const isAdmin = loggedIn?.user.roles?.some((r) => r.role === Role.Admin);
@@ -119,7 +119,7 @@ async function mockUserApi(page: Page) {
     const franchise = { id: franchises.length + 1, name: franchiseReq.name, admins: [] as any[], stores: [] };
     for (const admin of franchiseReq.admins) {
       const account = accounts.find((a) => a.user.email === admin.email)!;
-      account.user.roles!.push({ role: Role.Franchisee, objectId: String(franchise.id) });
+      account.user.roles!.push({ role: Role.Franchisee, objectId: franchise.id });
       franchise.admins.push({ id: account.user.id, name: account.user.name, email: account.user.email });
     }
     franchises.push(franchise);
@@ -128,7 +128,7 @@ async function mockUserApi(page: Page) {
 
   await page.route(/\/api\/franchise\/\d+$/, async (route) => {
     expect(route.request().method()).toBe("GET");
-    const userId = new URL(route.request().url()).pathname.split("/").pop();
+    const userId = Number(new URL(route.request().url()).pathname.split("/").pop());
     await route.fulfill({ json: franchises.filter((f) => f.admins.some((a: any) => a.id === userId)) });
   });
 
@@ -328,7 +328,7 @@ async function filterUsers(usersTable: Locator, filter: string) {
 
 function addNumberedUsers(count: number) {
   for (let i = 1; i <= count; i++) {
-    mockAccounts.push({ user: { id: String(i + 2), name: `user ${i}`, email: `user${i}@jwt.com`, roles: [{ role: Role.Diner }] }, password: "a" });
+    mockAccounts.push({ user: { id: i + 2, name: `user ${i}`, email: `user${i}@jwt.com`, roles: [{ role: Role.Diner }] }, password: "a" });
   }
 }
 
@@ -342,9 +342,9 @@ const adminRow = ["常用名字", "a@jwt.com", "admin"];
 
 test("listUsers shows each user's name, email, and role", async ({ page }) => {
   mockAccounts.push(
-    { user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" },
+    { user: { id: 3, name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" },
     {
-      user: { id: "4", name: "Pizza Franchisee", email: "f@jwt.com", roles: [{ role: Role.Diner }, { role: Role.Franchisee, objectId: "1" }] },
+      user: { id: 4, name: "Pizza Franchisee", email: "f@jwt.com", roles: [{ role: Role.Diner }, { role: Role.Franchisee, objectId: 1 }] },
       password: "franchisee",
     }
   );
@@ -360,8 +360,8 @@ test("listUsers shows each user's name, email, and role", async ({ page }) => {
 
 test("listUsers filters by name", async ({ page }) => {
   mockAccounts.push(
-    { user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" },
-    { user: { id: "4", name: "Buddy", email: "b@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" }
+    { user: { id: 3, name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" },
+    { user: { id: 4, name: "Buddy", email: "b@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" }
   );
   const allRows = [adminRow, ["Kai Chen", "d@jwt.com", "diner"], ["Buddy", "b@jwt.com", "diner"]];
 
@@ -405,7 +405,7 @@ test("listUsers pages through users", async ({ page }) => {
 
 test("listUsers keeps the filter while paging and resets to the first page", async ({ page }) => {
   addNumberedUsers(12);
-  mockAccounts.push({ user: { id: "15", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
+  mockAccounts.push({ user: { id: 15, name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
 
   const usersTable = await openAdminUsers(page);
   const previous = usersTable.getByRole("button", { name: "«" });
@@ -429,8 +429,8 @@ test("listUsers keeps the filter while paging and resets to the first page", asy
 
 test("deleteUser removes the user from the list", async ({ page }) => {
   mockAccounts.push(
-    { user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" },
-    { user: { id: "4", name: "Buddy", email: "b@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" }
+    { user: { id: 3, name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" },
+    { user: { id: 4, name: "Buddy", email: "b@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" }
   );
 
   const usersTable = await openAdminUsers(page);
@@ -446,7 +446,7 @@ test("deleteUser removes the user from the list", async ({ page }) => {
 });
 
 test("deleteUser prevents the deleted user from logging in", async ({ page }) => {
-  mockAccounts.push({ user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
+  mockAccounts.push({ user: { id: 3, name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
 
   const usersTable = await openAdminUsers(page);
   await userRow(usersTable, "d@jwt.com").getByRole("button", { name: "Delete" }).click();
@@ -459,7 +459,7 @@ test("deleteUser prevents the deleted user from logging in", async ({ page }) =>
 });
 
 test("deleteUser does not let an admin delete themselves", async ({ page }) => {
-  mockAccounts.push({ user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
+  mockAccounts.push({ user: { id: 3, name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
 
   const usersTable = await openAdminUsers(page);
   await expect(userRow(usersTable, "a@jwt.com").getByRole("button", { name: "Delete" })).toBeDisabled();
@@ -468,7 +468,7 @@ test("deleteUser does not let an admin delete themselves", async ({ page }) => {
 
 test("deleteUser keeps the current filter and page", async ({ page }) => {
   addNumberedUsers(12);
-  mockAccounts.push({ user: { id: "15", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
+  mockAccounts.push({ user: { id: 15, name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
 
   const usersTable = await openAdminUsers(page);
   await filterUsers(usersTable, "user");

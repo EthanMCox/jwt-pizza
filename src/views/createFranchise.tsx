@@ -9,7 +9,7 @@ import { Franchise } from '../service/pizzaService';
 
 export default function CreateFranchise() {
   const navigateToParentPath = useBreadcrumb();
-  const [franchise, setFranchise] = React.useState<Franchise>({ stores: [], id: '', name: '' });
+  const [franchise, setFranchise] = React.useState<Franchise>({ stores: [], id: 0, name: '' });
 
   async function createFranchise(event: React.FormEvent) {
     event.preventDefault();

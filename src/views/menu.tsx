@@ -10,7 +10,7 @@ export default function Menu() {
   const [order, setOrder] = useState(useLocation().state?.order || { items: [] });
   const [menu, setMenu] = useState<Menu>([]);
   const [storeMap, setStoreMap] = useState<{ [key: string]: { store: Store; franchise: Franchise } }>({});
-  const [selectedStore, setSelectedStore] = useState(order.storeId || '');
+  const [selectedStore, setSelectedStore] = useState<string>(order.storeId ? String(order.storeId) : '');
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -31,7 +31,7 @@ export default function Menu() {
   function checkout(event: React.FormEvent) {
     event.preventDefault();
     if (selectedStore && order.items.length > 0) {
-      order.storeId = selectedStore;
+      order.storeId = Number(selectedStore);
       order.franchiseId = storeMap[selectedStore].franchise.id;
       navigate('/payment', { state: { order: order } });
     }

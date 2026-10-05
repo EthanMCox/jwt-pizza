@@ -13,7 +13,7 @@ namespace Role {
 type Menu = Pizza[];
 
 type Pizza = {
-  id: string;
+  id: number;
   title: string;
   description: string;
   image: string;
@@ -21,15 +21,15 @@ type Pizza = {
 };
 
 type OrderItem = {
-  menuId: string;
+  menuId: number;
   description: string;
   price: number;
 };
 
 type Order = {
-  id: string;
-  franchiseId: string;
-  storeId: string;
+  id: number;
+  franchiseId: number;
+  storeId: number;
   date: string;
   items: OrderItem[];
 };
@@ -40,18 +40,18 @@ type OrderResponse = {
 };
 
 type OrderHistory = {
-  id: string;
-  dinerId: string;
+  id: number;
+  dinerId: number;
   orders: Order[];
 };
 
 type UserRole = {
   role: Role;
-  objectId?: string;
+  objectId?: number;
 };
 
 type User = {
-  id?: string;
+  id?: number;
   name?: string;
   email?: string;
   password?: string;
@@ -59,14 +59,14 @@ type User = {
 };
 
 type Store = {
-  id: string;
+  id: number;
   name: string;
   totalRevenue?: number;
 };
 
 type Franchise = {
-  id: string;
-  admins?: { email: string; id?: string; name?: string }[];
+  id: number;
+  admins?: { email: string; id?: number; name?: string }[];
   name: string;
   stores: Store[];
 };

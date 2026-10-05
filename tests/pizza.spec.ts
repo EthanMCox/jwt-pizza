@@ -2,7 +2,7 @@ import { Page } from '@playwright/test';
 import { test, expect } from 'playwright-test-coverage';
 import { Role, User } from '../src/service/pizzaService';
 
-type MockApiUser = Omit<User, 'id'> & { id?: string | number };
+type MockApiUser = Omit<User, 'id'> & { id?: number };
 
 type AuthFixture = {
   user: MockApiUser;
@@ -171,7 +171,7 @@ async function basicInit(page: Page) {
     users: {
       'd@jwt.com': {
         user: {
-          id: '3',
+          id: 3,
           name: 'Kai Chen',
           email: 'd@jwt.com',
           roles: [{ role: Role.Diner }],
@@ -205,7 +205,7 @@ async function basicInit(page: Page) {
     post: (orderReq) => {
       expect(orderReq).toMatchObject({
         franchiseId: 2,
-        storeId: '4',
+        storeId: 4,
         items: [
           { menuId: 1, description: 'Veggie', price: 0.0038 },
           { menuId: 2, description: 'Pepperoni', price: 0.0042 },
@@ -291,7 +291,7 @@ test('register, order, verify the JWT, and view order history', async ({ page })
     post: (orderReq) => {
       expect(orderReq).toMatchObject({
         franchiseId: 2,
-        storeId: '4',
+        storeId: 4,
         items: [
           { menuId: 1, description: 'Veggie', price: 0.0038 },
           { menuId: 2, description: 'Margarita', price: 0.0042 },
@@ -349,7 +349,7 @@ test('franchisee creates and closes one store', async ({ page }) => {
     id: 4,
     name: 'Pizza Franchisee',
     email: 'f@jwt.com',
-    roles: [{ role: Role.Franchisee, objectId: '4' }],
+    roles: [{ role: Role.Franchisee, objectId: 4 }],
   };
   const franchise = {
     id: 4,

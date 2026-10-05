@@ -176,7 +176,7 @@ export default function AdminDashboard(props: Props) {
                                 type="button"
                                 className="px-2 py-1 inline-flex items-center gap-x-2 text-sm font-semibold rounded-lg border border-1 border-orange-400 text-orange-400 hover:border-orange-800 hover:text-orange-800 disabled:border-neutral-300 disabled:text-neutral-400 disabled:pointer-events-none"
                                 onClick={() => deleteUser(user)}
-                                disabled={user.id == props.user?.id}
+                                disabled={user.id === props.user?.id}
                               >
                                 <TrashIcon />
                                 Delete

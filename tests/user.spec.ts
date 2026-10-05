@@ -479,3 +479,59 @@ test("deleteUser keeps the current filter and page", async ({ page }) => {
   await expectUserRows(usersTable, numberedUserRows(12, 12));
   await expect(usersTable.getByRole("button", { name: "«" })).toBeEnabled();
 });
+
+// Registered after mockUserApi, so it takes priority and makes one kind of request fail,
+// either every time or only for the next `times` matching requests
+async function failRequests(page: Page, url: RegExp, method: string, message: string, times?: number) {
+  await page.route(
+    (u) => url.test(u.href),
+    async (route) => {
+      if (route.request().method() !== method) {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({ status: 500, json: { message } });
+    },
+    { times }
+  );
+}
+
+test("updateUser shows an error and keeps the dialog open when the update fails", async ({ page }) => {
+  const email = randomEmail();
+  await register(page, "pizza diner", email, "diner");
+  await page.getByRole("link", { name: "pd" }).click();
+
+  await failRequests(page, /\/api\/user\/\d+$/, "PUT", "unable to update user", 1);
+  await page.getByRole("button", { name: "Edit" }).click();
+  await page.getByRole("dialog").getByRole("textbox").nth(0).fill("pizza dinerx");
+  await page.getByRole("button", { name: "Update" }).click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("unable to update user");
+  await expect(dialog).toBeVisible();
+  await expect(page.getByRole("main")).not.toContainText("pizza dinerx");
+
+  // Retrying once the backend works saves the change and clears the error
+  await page.getByRole("button", { name: "Update" }).click();
+  await page.waitForSelector('[role="dialog"].hidden', { state: "attached" });
+  await expect(page.getByRole("main")).toContainText("pizza dinerx");
+  await expect(page.getByRole("main")).not.toContainText("unable to update user");
+});
+
+test("listUsers shows an error when the users cannot be loaded", async ({ page }) => {
+  await failRequests(page, /\/api\/user\?/, "GET", "unable to list users");
+
+  const usersTable = await openAdminUsers(page);
+  await expect(page.getByRole("main")).toContainText("unable to list users");
+  await expectUserRows(usersTable, []);
+});
+
+test("deleteUser shows an error and keeps the user when the delete fails", async ({ page }) => {
+  mockAccounts.push({ user: { id: 3, name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
+  await failRequests(page, /\/api\/user\/\d+$/, "DELETE", "unable to delete user");
+
+  const usersTable = await openAdminUsers(page);
+  await userRow(usersTable, "d@jwt.com").getByRole("button", { name: "Delete" }).click();
+  await expect(page.getByRole("main")).toContainText("unable to delete user");
+  await expectUserRows(usersTable, [adminRow, ["Kai Chen", "d@jwt.com", "diner"]]);
+});

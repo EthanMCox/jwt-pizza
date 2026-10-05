@@ -18,6 +18,8 @@ export default function DinerDashboard(props: Props) {
   const nameRef = React.useRef<HTMLInputElement>(null);
   const emailRef = React.useRef<HTMLInputElement>(null);
   const passwordRef = React.useRef<HTMLInputElement>(null);
+  const modalRef = React.useRef<HTMLDivElement>(null);
+  const [updateError, setUpdateError] = React.useState('');
 
   React.useEffect(() => {
     (async () => {
@@ -45,13 +47,22 @@ async function updateUser() {
     roles: user.roles,
   };
 
-  await pizzaService.updateUser(updatedUser);
-
-  props.setUser(updatedUser);
-  setTimeout(() => {
-    HSOverlay.close(document.getElementById('hs-jwt-modal')!);
-  }, 100);
+  try {
+    const savedUser = await pizzaService.updateUser(updatedUser);
+    setUpdateError('');
+    props.setUser(savedUser);
+    setTimeout(() => {
+      HSOverlay.close(modalRef.current!);
+    }, 100);
+  } catch (error: any) {
+    setUpdateError(error.message || 'unable to update user');
+  }
 }
+
+  function openEditDialog() {
+    setUpdateError('');
+    HSOverlay.open(modalRef.current!);
+  }
 
   return (
     <View title="Your pizza kitchen">
@@ -65,9 +76,7 @@ async function updateUser() {
           <Button
             title="Edit"
             className="w-16 p-0"
-            onPress={() =>
-              HSOverlay.open(document.getElementById("hs-jwt-modal")!)
-            }
+            onPress={openEditDialog}
           />
         </div>
 
@@ -164,6 +173,7 @@ async function updateUser() {
         aria-modal="true"
         aria-labelledby="dialog-title"
         id="hs-jwt-modal"
+        ref={modalRef}
         className="hs-overlay hidden size-full fixed top-10 start-0 z-[80] overflow-x-hidden overflow-y-auto pointer-events-none"
       >
         <div className="hs-overlay-open:mt-7 hs-overlay-open:opacity-100 hs-overlay-open:duration-500 mt-0 opacity-0 ease-out transition-all sm:max-w-lg sm:w-full m-3 sm:mx-auto min-h-[calc(100%-3.5rem)]">
@@ -179,6 +189,7 @@ async function updateUser() {
               </button>
             </div>
             <div className="p-4 overflow-y-scroll max-h-52">
+              {updateError && <div className="text-sm text-red-600">{updateError}</div>}
               <div className="my-4 text-lg text-start grid grid-cols-5 gap-2 items-center">
                 <div className="font-semibold">name:</div>
                 <input

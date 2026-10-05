@@ -27,10 +27,16 @@ export default function AdminDashboard(props: Props) {
   const [userPage, setUserPage] = React.useState(0);
   const [userFilter, setUserFilter] = React.useState('');
   const filterUserRef = React.useRef<HTMLInputElement>(null);
+  const [userError, setUserError] = React.useState('');
 
   async function loadUsers() {
     if (Role.isRole(props.user, Role.Admin)) {
-      setUserList(await pizzaService.getUsers(userPage, 10, `*${userFilter}*`));
+      try {
+        setUserList(await pizzaService.getUsers(userPage, 10, `*${userFilter}*`));
+        setUserError('');
+      } catch (error: any) {
+        setUserError(error.message || 'unable to list users');
+      }
     }
   }
 
@@ -39,8 +45,12 @@ export default function AdminDashboard(props: Props) {
   }, [props.user, userPage, userFilter]);
 
   async function deleteUser(user: User) {
-    await pizzaService.deleteUser(user);
-    await loadUsers();
+    try {
+      await pizzaService.deleteUser(user);
+      await loadUsers();
+    } catch (error: any) {
+      setUserError(error.message || 'unable to delete user');
+    }
   }
 
   function filterUsers() {
@@ -150,6 +160,7 @@ export default function AdminDashboard(props: Props) {
         </div>
         <div className="text-start py-8 px-4 sm:px-6 lg:px-8">
           <h3 className="text-neutral-100 text-xl">Users</h3>
+          {userError && <div className="text-yellow-200">{userError}</div>}
           <div className="bg-neutral-100 overflow-clip my-4">
             <div className="flex flex-col">
               <div className="-m-1.5 overflow-x-auto">

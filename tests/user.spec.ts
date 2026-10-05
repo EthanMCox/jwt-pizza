@@ -68,8 +68,25 @@ async function mockUserApi(page: Page) {
 
   await page.route(/\/api\/user\/\d+$/, async (route) => {
     const request = route.request();
-    expect(request.method()).toBe("PUT");
     const userId = new URL(request.url()).pathname.split("/").pop();
+
+    if (request.method() === "DELETE") {
+      const isAdmin = loggedIn?.user.roles?.some((r) => r.role === Role.Admin);
+      if (!isAdmin || userId === loggedIn?.user.id) {
+        await route.fulfill({ status: 403, json: { message: "unable to delete user" } });
+        return;
+      }
+      const index = accounts.findIndex((a) => a.user.id === userId);
+      if (index < 0) {
+        await route.fulfill({ status: 404, json: { message: "unknown user" } });
+        return;
+      }
+      accounts.splice(index, 1);
+      await route.fulfill({ json: { message: "user deleted" } });
+      return;
+    }
+
+    expect(request.method()).toBe("PUT");
     expect(userId).toBe(loggedIn?.user.id);
 
     const { name, email, password } = request.postDataJSON();
@@ -291,12 +308,17 @@ async function openAdminUsers(page: Page) {
 }
 
 // Checks the exact rows of the users table, in order, as [name, email, role] cells
+// followed by the Delete action cell
 async function expectUserRows(usersTable: Locator, rows: string[][]) {
   const bodyRows = usersTable.locator("tbody").getByRole("row");
   await expect(bodyRows).toHaveCount(rows.length);
   for (let i = 0; i < rows.length; i++) {
-    await expect(bodyRows.nth(i).getByRole("cell")).toHaveText(rows[i]);
+    await expect(bodyRows.nth(i).getByRole("cell")).toHaveText([...rows[i], "Delete"]);
   }
+}
+
+function userRow(usersTable: Locator, email: string) {
+  return usersTable.locator("tbody").getByRole("row").filter({ hasText: email });
 }
 
 async function filterUsers(usersTable: Locator, filter: string) {
@@ -328,7 +350,7 @@ test("listUsers shows each user's name, email, and role", async ({ page }) => {
   );
 
   const usersTable = await openAdminUsers(page);
-  await expect(usersTable.locator("thead").getByRole("columnheader")).toHaveText(["Name", "Email", "Role"]);
+  await expect(usersTable.locator("thead").getByRole("columnheader")).toHaveText(["Name", "Email", "Role", "Action"]);
   await expectUserRows(usersTable, [
     adminRow,
     ["Kai Chen", "d@jwt.com", "diner"],
@@ -403,4 +425,57 @@ test("listUsers keeps the filter while paging and resets to the first page", asy
   await expectUserRows(usersTable, [["Kai Chen", "d@jwt.com", "diner"]]);
   await expect(previous).toBeDisabled();
   await expect(next).toBeDisabled();
+});
+
+test("deleteUser removes the user from the list", async ({ page }) => {
+  mockAccounts.push(
+    { user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" },
+    { user: { id: "4", name: "Buddy", email: "b@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" }
+  );
+
+  const usersTable = await openAdminUsers(page);
+  await expectUserRows(usersTable, [adminRow, ["Kai Chen", "d@jwt.com", "diner"], ["Buddy", "b@jwt.com", "diner"]]);
+
+  await userRow(usersTable, "d@jwt.com").getByRole("button", { name: "Delete" }).click();
+  await expectUserRows(usersTable, [adminRow, ["Buddy", "b@jwt.com", "diner"]]);
+
+  // Still gone after leaving and coming back to the dashboard
+  await page.getByRole("link", { name: "home" }).click();
+  await page.getByRole("link", { name: "Admin" }).click();
+  await expectUserRows(usersTable, [adminRow, ["Buddy", "b@jwt.com", "diner"]]);
+});
+
+test("deleteUser prevents the deleted user from logging in", async ({ page }) => {
+  mockAccounts.push({ user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
+
+  const usersTable = await openAdminUsers(page);
+  await userRow(usersTable, "d@jwt.com").getByRole("button", { name: "Delete" }).click();
+  await expectUserRows(usersTable, [adminRow]);
+
+  await logout(page);
+  await login(page, "d@jwt.com", "a");
+  await expect(page.getByRole("main")).toContainText("unknown user");
+  await expect(page.getByRole("link", { name: "KC" })).toHaveCount(0);
+});
+
+test("deleteUser does not let an admin delete themselves", async ({ page }) => {
+  mockAccounts.push({ user: { id: "3", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
+
+  const usersTable = await openAdminUsers(page);
+  await expect(userRow(usersTable, "a@jwt.com").getByRole("button", { name: "Delete" })).toBeDisabled();
+  await expect(userRow(usersTable, "d@jwt.com").getByRole("button", { name: "Delete" })).toBeEnabled();
+});
+
+test("deleteUser keeps the current filter and page", async ({ page }) => {
+  addNumberedUsers(12);
+  mockAccounts.push({ user: { id: "15", name: "Kai Chen", email: "d@jwt.com", roles: [{ role: Role.Diner }] }, password: "a" });
+
+  const usersTable = await openAdminUsers(page);
+  await filterUsers(usersTable, "user");
+  await usersTable.getByRole("button", { name: "»" }).click();
+  await expectUserRows(usersTable, numberedUserRows(11, 12));
+
+  await userRow(usersTable, "user11@jwt.com").getByRole("button", { name: "Delete" }).click();
+  await expectUserRows(usersTable, numberedUserRows(12, 12));
+  await expect(usersTable.getByRole("button", { name: "«" })).toBeEnabled();
 });
